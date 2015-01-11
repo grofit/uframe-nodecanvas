@@ -34,10 +34,18 @@ namespace NodeCanvasAddons.uFrame.Editor
         {
             foreach (var property in _viewModel.GetViewModelProperties().Select(x => x.Property))
             {
-                var valueString = property.ValueType.IsValueType ? property.ObjectValue.ToString() : "Complex Object";
                 GUILayout.BeginHorizontal();
                 GUILayout.Label(string.Format("{0}<{1}>", property.PropertyName, property.ValueType.Name));
                 GUILayout.EndHorizontal();
+            }
+        }
+
+        private void DrawActionButtons()
+        {
+            if (GUILayout.Button("Refresh Bindings"))
+            {
+                RemovePropertiesFromBlackboard();
+                SyncPropertiesToBlackboard();
             }
         }
 
@@ -47,7 +55,7 @@ namespace NodeCanvasAddons.uFrame.Editor
             foreach (var property in _viewModel.GetViewModelProperties().Select(x => x.Property))
             {
                 if(!_blackboard.HasData(property.PropertyName))
-                { _blackboard.SetDataValue(property.PropertyName, property.ObjectValue); }
+                { _blackboard.SetDataValue(property.PropertyName, property.ObjectValue ?? "Empty"); }
             }
         }
 
@@ -67,6 +75,7 @@ namespace NodeCanvasAddons.uFrame.Editor
 
             GUILayout.Label("Located Properties: ", new GUIStyle {fontStyle = FontStyle.Bold});
             DrawLocatedProperties();
+            DrawActionButtons();
         }
     }
 }

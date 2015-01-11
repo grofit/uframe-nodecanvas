@@ -1,16 +1,16 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using NodeCanvas;
-using NodeCanvasAddons.uFrame.Extensions;
+using UniRx;
+using UniRx.UI;
 using UnityEngine;
 
 namespace NodeCanvasAddons.uFrame.Components
 {
     public class SubscriptionManagementEntity
     {
+        public IDisposable ViewSubscription;
         public Action SubscribeToView { get; set; }
         public Action SubscribeToBlackboard { get; set; }
         public Action UnsubscribeFromView { get; set; }
@@ -75,7 +75,7 @@ namespace NodeCanvasAddons.uFrame.Components
 
         private void CleanBlackboardProperties()
         {
-            foreach (var property in _viewModel.Properties.Values)
+            foreach (var property in _viewModel.Properties.Select(x => x.Property))
             { _blackboard.DeleteData(property.PropertyName); }
         }
 
@@ -84,7 +84,7 @@ namespace NodeCanvasAddons.uFrame.Components
             if(_subscriptionManager.Count > 0)
             { ReleaseBindings(); }
 
-            foreach (var property in _viewModel.Properties.Values)
+            foreach (var property in _viewModel.Properties.Select(x => x.Property))
             { _blackboard.SetDataValue(property.PropertyName, property.ObjectValue); }
 
             if (_subscriptionManager.Count > 0)
@@ -94,28 +94,29 @@ namespace NodeCanvasAddons.uFrame.Components
         private void GenerateSubscriptionManagementList()
         {
             Debug.Log("Generating Subscriptions For " + _viewModel.Properties.Count + " Properties");
-            foreach (var property in _viewModel.Properties.Values)
+            foreach (var property in _viewModel.Properties.Select(x => x.Property))
             {
                 var scopedProperty = property;
                 var subscriptionManagementEntity = new SubscriptionManagementEntity();
                 var internalPropertyName = string.Format("_{0}Property", scopedProperty.PropertyName);
                 var blackboardProperty = _blackboard.GetAllData().Single(x => x.name == scopedProperty.PropertyName);
 
-                var propertyCallbackAction = new ModelPropertyBase.PropertyChangedHandler(value =>
+                var subscriptionMethod = new Action<object>(x =>
                 {
-                    Debug.Log(string.Format("View [{0}] changed from [{1} to {2}]", scopedProperty.PropertyName, blackboardProperty.objectValue, value));
+                    Debug.Log(string.Format("View [{0}] changed from [{1} to {2}]", scopedProperty.PropertyName, blackboardProperty.objectValue, x));
                     _subscriptionManager[scopedProperty.PropertyName].UnsubscribeFromBlackboard();
-                    _blackboard.SetDataValue(scopedProperty.PropertyName, value);
+                    _blackboard.SetDataValue(scopedProperty.PropertyName, x);
                     _subscriptionManager[scopedProperty.PropertyName].SubscribeToBlackboard();
                 });
-                subscriptionManagementEntity.SubscribeToView = () => scopedProperty.ValueChanged += propertyCallbackAction;
-                subscriptionManagementEntity.UnsubscribeFromView = () => property.ValueChanged -= propertyCallbackAction;
+
+                subscriptionManagementEntity.SubscribeToView = () => subscriptionManagementEntity.ViewSubscription = scopedProperty.ObserveEveryValueChanged(x => x.ObjectValue).Subscribe(subscriptionMethod);
+                subscriptionManagementEntity.UnsubscribeFromView = () => subscriptionManagementEntity.ViewSubscription.Dispose();
                 
                 var blackboardCallbackAction = new Action<string, object>((varName, value) =>
                 {
-                    Debug.Log(string.Format("Blackboard [{0}] changed from [{1} to {2}]", scopedProperty.PropertyName, _viewModel[internalPropertyName].ObjectValue, value));
+                    Debug.Log(string.Format("Blackboard [{0}] changed from [{1} to {2}]", scopedProperty.PropertyName, _viewModel[internalPropertyName].Property.ObjectValue, value));
                     _subscriptionManager[scopedProperty.PropertyName].UnsubscribeFromView();
-                    _viewModel[internalPropertyName].ObjectValue = value;
+                    _viewModel[internalPropertyName].Property.ObjectValue = value;
                     _subscriptionManager[scopedProperty.PropertyName].SubscribeToView();
                 });
                 subscriptionManagementEntity.SubscribeToBlackboard = () => blackboardProperty.onValueChanged += blackboardCallbackAction;
