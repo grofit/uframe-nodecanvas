@@ -4,3 +4,7 @@
 /Assets/uFrame
 /Assets/UnityVS
 *.suo
+/Library
+/*.sln
+*.csproj
+/Temp
