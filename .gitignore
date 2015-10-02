@@ -1,2 +1,6 @@
 /NodeCanvasPlugins/uFrame/Extensions/*.meta
 *.meta
+/Assets/NodeCanvas
+/Assets/uFrame
+/Assets/UnityVS
+*.suo

@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using NodeCanvas;
+using NodeCanvas.Framework;
+using uFrame.Kernel;
+using uFrame.MVVM;
 using UniRx;
-using UniRx.UI;
 using UnityEngine;
 
 namespace NodeCanvasAddons.uFrame.Components
@@ -27,22 +29,38 @@ namespace NodeCanvasAddons.uFrame.Components
 
         private readonly Dictionary<string, SubscriptionManagementEntity> _subscriptionManager = new Dictionary<string, SubscriptionManagementEntity>();
 
-        void Awake()
+        void Start()
         {
             _view = GetComponent<ViewBase>();
             _blackboard = GetComponent<Blackboard>();
-            _viewModel = _view.ViewModelObject;
-            RefreshBlackboardVarsFromView();
-            GenerateSubscriptionManagementList();
+            
+            
+            uFrameKernel.EventAggregator
+                .GetEvent<SceneLoaderEvent>()
+                .First(x => x.SceneRoot is ExampleScene && x.State == SceneState.Loaded)
+                .Subscribe(OnSceneLoaded());
+        }
+
+        private Action<SceneLoaderEvent> OnSceneLoaded()
+        {
+            return x =>
+            {
+                _viewModel = _view.GetViewModel();
+                RefreshBlackboardVarsFromView();
+                GenerateSubscriptionManagementList();
+                SetupBindings();
+            };
         }
 
         void OnEnable()
         {
+            if (_viewModel == null) { return; }
             SetupBindings();
         }
 
         void OnDisable()
         {
+            if (_viewModel == null) { return; }
             ReleaseBindings();
         }
 
@@ -55,7 +73,9 @@ namespace NodeCanvasAddons.uFrame.Components
 
         private void SetupBindings()
         {
+#if UNITY_EDITOR
             Debug.Log("Enabling " + _subscriptionManager.Count + " Bindings");
+#endif
             foreach (var subscriptionManagementEntry in _subscriptionManager.Values)
             {
                 subscriptionManagementEntry.SubscribeToView();
@@ -65,7 +85,9 @@ namespace NodeCanvasAddons.uFrame.Components
 
         private void ReleaseBindings()
         {
+#if UNITY_EDITOR
             Debug.Log("Disabling " + _subscriptionManager.Count + " Bindings");
+#endif
             foreach (var subscriptionManagementEntry in _subscriptionManager.Values)
             {
                 subscriptionManagementEntry.UnsubscribeFromView();
@@ -76,7 +98,7 @@ namespace NodeCanvasAddons.uFrame.Components
         private void CleanBlackboardProperties()
         {
             foreach (var property in _viewModel.Properties.Select(x => x.Property))
-            { _blackboard.DeleteData(property.PropertyName); }
+            { _blackboard.variables.Remove(property.PropertyName); }
         }
 
         private void RefreshBlackboardVarsFromView()
@@ -85,7 +107,7 @@ namespace NodeCanvasAddons.uFrame.Components
             { ReleaseBindings(); }
 
             foreach (var property in _viewModel.Properties.Select(x => x.Property))
-            { _blackboard.SetDataValue(property.PropertyName, property.ObjectValue); }
+            { _blackboard.variables[property.PropertyName].value = property.ObjectValue; }
 
             if (_subscriptionManager.Count > 0)
             { SetupBindings(); }
@@ -93,19 +115,22 @@ namespace NodeCanvasAddons.uFrame.Components
 
         private void GenerateSubscriptionManagementList()
         {
+#if UNITY_EDITOR
             Debug.Log("Generating Subscriptions For " + _viewModel.Properties.Count + " Properties");
-            foreach (var property in _viewModel.Properties.Select(x => x.Property))
+#endif
+            foreach (var property in _viewModel.Properties.Select(x => x.Property).ToList())
             {
                 var scopedProperty = property;
                 var subscriptionManagementEntity = new SubscriptionManagementEntity();
-                var internalPropertyName = string.Format("_{0}Property", scopedProperty.PropertyName);
-                var blackboardProperty = _blackboard.GetAllData().Single(x => x.name == scopedProperty.PropertyName);
+                var blackboardProperty = _blackboard.variables[scopedProperty.PropertyName];
 
                 var subscriptionMethod = new Action<object>(x =>
                 {
-                    Debug.Log(string.Format("View [{0}] changed from [{1} to {2}]", scopedProperty.PropertyName, blackboardProperty.objectValue, x));
+#if UNITY_EDITOR
+                    Debug.Log(string.Format("View [{0}] changed from [{1} to {2}]", scopedProperty.PropertyName, blackboardProperty.value, x));
+#endif
                     _subscriptionManager[scopedProperty.PropertyName].UnsubscribeFromBlackboard();
-                    _blackboard.SetDataValue(scopedProperty.PropertyName, x);
+                    _blackboard.variables[scopedProperty.PropertyName].value = x;
                     _subscriptionManager[scopedProperty.PropertyName].SubscribeToBlackboard();
                 });
 
@@ -114,9 +139,11 @@ namespace NodeCanvasAddons.uFrame.Components
                 
                 var blackboardCallbackAction = new Action<string, object>((varName, value) =>
                 {
-                    Debug.Log(string.Format("Blackboard [{0}] changed from [{1} to {2}]", scopedProperty.PropertyName, _viewModel[internalPropertyName].Property.ObjectValue, value));
+#if UNITY_EDITOR
+                    Debug.Log(string.Format("Blackboard [{0}] changed from [{1} to {2}]", scopedProperty.PropertyName, scopedProperty.ObjectValue, value));
+#endif
                     _subscriptionManager[scopedProperty.PropertyName].UnsubscribeFromView();
-                    _viewModel[internalPropertyName].Property.ObjectValue = value;
+                    scopedProperty.ObjectValue = value;
                     _subscriptionManager[scopedProperty.PropertyName].SubscribeToView();
                 });
                 subscriptionManagementEntity.SubscribeToBlackboard = () => blackboardProperty.onValueChanged += blackboardCallbackAction;
@@ -124,7 +151,9 @@ namespace NodeCanvasAddons.uFrame.Components
 
                 _subscriptionManager.Add(property.PropertyName, subscriptionManagementEntity);
             }
+#if UNITY_EDITOR
             Debug.Log("Generated Subscriptions For " + _viewModel.Properties.Count + " Properties");
+#endif
         }
     }
 }
